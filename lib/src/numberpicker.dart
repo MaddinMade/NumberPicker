@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:infinite_listview/infinite_listview.dart';
@@ -101,7 +100,7 @@ class _NumberPickerState extends State<NumberPicker> {
   }
 
   void _scrollListener() {
-    var indexOfMiddleElement = (_scrollController.offset / itemExtent).round();
+    var indexOfMiddleElement = this.indexOfMiddleElement;
     if (widget.infiniteLoop) {
       indexOfMiddleElement %= itemCount;
     } else {
@@ -111,13 +110,16 @@ class _NumberPickerState extends State<NumberPicker> {
         _intValueFromIndex(indexOfMiddleElement + additionalItemsOnEachSide);
 
     if (widget.value != intValueInTheMiddle) {
-      widget.onChanged(intValueInTheMiddle);
-      if (widget.haptics) {
-        HapticFeedback.selectionClick();
-      }
+      if (isScrolling) {
+        widget.onChanged(intValueInTheMiddle);
+        if (widget.haptics) {
+          HapticFeedback.selectionClick();
+        }
+      } else
+        _maybeCenterValue();
     }
     Future.delayed(
-      Duration(milliseconds: 100),
+      const Duration(milliseconds: 400),
       () => _maybeCenterValue(),
     );
   }
@@ -127,6 +129,9 @@ class _NumberPickerState extends State<NumberPicker> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.value != widget.value) {
       _maybeCenterValue();
+    } else if (oldWidget.minValue != widget.minValue ||
+        oldWidget.maxValue != widget.maxValue) {
+      _maybeCenterValue(animate: false);
     }
   }
 
@@ -135,6 +140,9 @@ class _NumberPickerState extends State<NumberPicker> {
     _scrollController.dispose();
     super.dispose();
   }
+
+  int get indexOfMiddleElement =>
+      (_scrollController.offset / itemExtent).round();
 
   bool get isScrolling => _scrollController.position.isScrollingNotifier.value;
 
@@ -207,16 +215,24 @@ class _NumberPickerState extends State<NumberPicker> {
 
     final child = isExtra
         ? SizedBox.shrink()
-        : Text(
-            _getDisplayedValue(value),
-            style: itemStyle,
+        : AnimatedDefaultTextStyle(
+            style: itemStyle ?? DefaultTextStyle.of(context).style,
+            duration: const Duration(milliseconds: 200),
+            child: Text(
+              _getDisplayedValue(value),
+            ),
           );
 
-    return Container(
-      width: widget.itemWidth,
-      height: widget.itemHeight,
-      alignment: Alignment.center,
-      child: child,
+    return GestureDetector(
+      onTap: () {
+        if (widget.value != value) widget.onChanged(value);
+      },
+      child: Container(
+        width: widget.itemWidth,
+        height: widget.itemHeight,
+        alignment: Alignment.center,
+        child: child,
+      ),
     );
   }
 
@@ -237,7 +253,7 @@ class _NumberPickerState extends State<NumberPicker> {
     return widget.minValue + index * widget.step;
   }
 
-  void _maybeCenterValue() {
+  void _maybeCenterValue({bool animate = true}) {
     if (_scrollController.hasClients && !isScrolling) {
       int diff = widget.value - widget.minValue;
       int index = diff ~/ widget.step;
@@ -246,11 +262,16 @@ class _NumberPickerState extends State<NumberPicker> {
         final cycles = (offset / (itemCount * itemExtent)).floor();
         index += cycles * itemCount;
       }
-      _scrollController.animateTo(
-        index * itemExtent,
-        duration: Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-      );
+      if (animate)
+        _scrollController.animateTo(
+          index * itemExtent,
+          duration: (index - indexOfMiddleElement).abs() <= 1
+              ? const Duration(milliseconds: 100)
+              : const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      else
+        _scrollController.jumpTo(index * itemExtent);
     }
   }
 }
